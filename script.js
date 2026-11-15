@@ -6,6 +6,7 @@
   const motionStatus = document.querySelector("#motion-status");
   const fullscreenButton = document.querySelector("#fullscreen");
   const fullscreenClose = document.querySelector("#fullscreen-close");
+  const soundToggle = document.querySelector("#sound-toggle");
   const ctx = canvas.getContext("2d");
   const sceneParent = scene.parentNode;
   const sceneNextSibling = scene.nextSibling;
@@ -29,6 +30,81 @@
   let previousAcceleration = null;
   let motionTimeout = null;
   let fullscreenScroll = null;
+  let audioContext = null;
+  let soundEnabled = true;
+  let pointerSoundPlayed = false;
+  let lastMotionSound = 0;
+  const motionSoundCooldown = 500;
+
+  function unlockAudio() {
+    if (!soundEnabled || !window.AudioContext) return;
+    audioContext ??= new window.AudioContext();
+    if (audioContext.state === "suspended") {
+      audioContext.resume().catch((error) => {
+        console.error("音声を有効にできませんでした:", error);
+      });
+    }
+  }
+
+  function playBoing(intensity = 1) {
+    if (!soundEnabled) return;
+    if (!window.AudioContext) {
+      soundEnabled = false;
+      soundToggle.disabled = true;
+      soundToggle.classList.add("is-muted");
+      soundToggle.setAttribute("aria-pressed", "false");
+      soundToggle.setAttribute("aria-label", "このブラウザでは音声を再生できません");
+      console.warn("Web Audio APIが利用できないため、効果音を再生できません。");
+      return;
+    }
+
+    audioContext ??= new window.AudioContext();
+    const play = () => {
+      if (!soundEnabled) return;
+      const now = audioContext.currentTime;
+      const duration = 0.7;
+      const volume = 0.14 * Math.max(0.3, Math.min(1, intensity));
+      const pitchCurve = Float32Array.from({ length: 64 }, (_, index) => {
+        const progress = index / 63;
+        const bounce = (1 + Math.cos(progress * Math.PI * 8)) / 2;
+        return 110 + 420 * Math.exp(-progress * 5.4) * bounce;
+      });
+
+      for (const voice of [
+        { type: "triangle", ratio: 1, level: 0.8 },
+        { type: "sine", ratio: 2, level: 0.2 }
+      ]) {
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        const frequencies = Float32Array.from(pitchCurve, (frequency) => frequency * voice.ratio);
+        oscillator.type = voice.type;
+        oscillator.frequency.setValueCurveAtTime(frequencies, now, duration);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(volume * voice.level, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(now);
+        oscillator.stop(now + duration);
+      }
+    };
+
+    if (audioContext.state === "suspended") {
+      audioContext.resume().then(play).catch((error) => {
+        console.error("効果音の再生を開始できませんでした:", error);
+      });
+      return;
+    }
+    play();
+  }
+
+  soundToggle.addEventListener("click", () => {
+    soundEnabled = !soundEnabled;
+    soundToggle.classList.toggle("is-muted", !soundEnabled);
+    soundToggle.setAttribute("aria-pressed", String(soundEnabled));
+    soundToggle.setAttribute("aria-label", soundEnabled ? "音をオフにする" : "音をオンにする");
+    unlockAudio();
+  });
 
   function geometry() {
     const fullscreen = scene.classList.contains("is-fullscreen");
@@ -210,12 +286,18 @@
     activePointer = event.pointerId;
     pointerStart = { x: event.clientX, y: event.clientY };
     pointerMoved = false;
+    pointerSoundPlayed = false;
     dragging = Math.hypot(event.clientX - rect.left - ball.x, event.clientY - rect.top - ball.y) <= radius * 1.4;
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener("pointermove", (event) => {
     if (event.pointerId !== activePointer) return;
-    if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 10) pointerMoved = true;
+    const pointerDistance = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+    if (pointerDistance > 10) pointerMoved = true;
+    if (dragging && pointerDistance > 120 && !pointerSoundPlayed) {
+      playBoing(Math.min(1, pointerDistance / 240));
+      pointerSoundPlayed = true;
+    }
     if (dragging && pointerMoved) pointBall(event);
   });
   function releasePointer(event) {
@@ -234,6 +316,7 @@
     dragging = false;
     activePointer = null;
     pointerStart = null;
+    playBoing();
     const { radius, scale } = geometry();
     ball.vy = -Math.max(900 * scale, Math.sqrt(springStiffness) * 2 * (Math.max(0, ball.y) + radius * 2));
     ball.vx += (Math.random() - 0.5) * 80 * geometry().scale;
@@ -311,9 +394,14 @@
       if (previousAcceleration && !dragging) {
         const dx = acceleration.x - previousAcceleration.x;
         const dy = acceleration.y - previousAcceleration.y;
+        const movement = Math.hypot(dx, dy);
         const scale = geometry().scale;
         ball.vx += Math.max(-2500, Math.min(2500, dx * 325)) * scale;
         ball.vy += Math.max(-2500, Math.min(2500, -dy * 325)) * scale;
+        if (movement >= 6 && now - lastMotionSound >= motionSoundCooldown) {
+          playBoing(Math.min(1, movement / 15));
+          lastMotionSound = now;
+        }
       }
       previousAcceleration = { x: acceleration.x, y: acceleration.y };
       lastMotion = now;
@@ -321,6 +409,7 @@
   }
 
   async function enableMotion(interactive) {
+    if (interactive) unlockAudio();
     if (!window.isSecureContext) {
       setMotionStatus("スマホの動きを使うには、HTTPSで開いてください。さわってもあそべます。");
       return;
