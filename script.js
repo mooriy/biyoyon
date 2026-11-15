@@ -7,6 +7,8 @@
   const fullscreenButton = document.querySelector("#fullscreen");
   const fullscreenClose = document.querySelector("#fullscreen-close");
   const ctx = canvas.getContext("2d");
+  const sceneParent = scene.parentNode;
+  const sceneNextSibling = scene.nextSibling;
 
   const ball = { x: 0, y: 0, vx: 0, vy: 0 };
   let width = 0;
@@ -20,6 +22,7 @@
   let lastMotion = 0;
   let previousAcceleration = null;
   let motionTimeout = null;
+  let fullscreenScroll = null;
 
   function geometry() {
     const fullscreen = scene.classList.contains("is-fullscreen");
@@ -223,13 +226,40 @@
     }
   });
 
+  function syncViewport() {
+    if (!scene.classList.contains("is-fullscreen")) return;
+    const viewport = window.visualViewport;
+    if (viewport) {
+      scene.style.left = `${viewport.offsetLeft}px`;
+      scene.style.top = `${viewport.offsetTop}px`;
+      scene.style.width = `${viewport.width}px`;
+      scene.style.height = `${viewport.height}px`;
+    }
+    const rect = scene.getBoundingClientRect();
+    if (rect.width !== width || rect.height !== height) resize();
+  }
+
   function setFullscreen(enabled) {
+    if (enabled) {
+      fullscreenScroll = { x: window.scrollX, y: window.scrollY };
+      document.body.appendChild(scene);
+    } else {
+      sceneParent.insertBefore(scene, sceneNextSibling);
+      for (const property of ["left", "top", "width", "height"]) {
+        scene.style.removeProperty(property);
+      }
+    }
     scene.classList.toggle("is-fullscreen", enabled);
     document.body.classList.toggle("fullscreen-open", enabled);
     fullscreenClose.hidden = !enabled;
     fullscreenButton.setAttribute("aria-pressed", String(enabled));
+    syncViewport();
     resize();
-    (enabled ? fullscreenClose : fullscreenButton).focus();
+    if (!enabled && fullscreenScroll) {
+      window.scrollTo(fullscreenScroll.x, fullscreenScroll.y);
+      fullscreenScroll = null;
+    }
+    (enabled ? fullscreenClose : fullscreenButton).focus({ preventScroll: true });
   }
   fullscreenButton.addEventListener("click", () => setFullscreen(true));
   fullscreenClose.addEventListener("click", () => setFullscreen(false));
@@ -252,8 +282,8 @@
         const dx = acceleration.x - previousAcceleration.x;
         const dy = acceleration.y - previousAcceleration.y;
         const scale = geometry().scale;
-        ball.vx += Math.max(-500, Math.min(500, dx * 65)) * scale;
-        ball.vy += Math.max(-500, Math.min(500, -dy * 65)) * scale;
+        ball.vx += Math.max(-5000, Math.min(5000, dx * 650)) * scale;
+        ball.vy += Math.max(-5000, Math.min(5000, -dy * 650)) * scale;
       }
       previousAcceleration = { x: acceleration.x, y: acceleration.y };
       lastMotion = now;
@@ -292,7 +322,14 @@
     }
   });
 
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", () => {
+    syncViewport();
+    resize();
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncViewport);
+    window.visualViewport.addEventListener("scroll", syncViewport);
+  }
   resize();
   requestAnimationFrame(frame);
 })();
