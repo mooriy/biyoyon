@@ -4,6 +4,8 @@
   const launchButton = document.querySelector("#launch");
   const motionButton = document.querySelector("#motion");
   const motionStatus = document.querySelector("#motion-status");
+  const fullscreenButton = document.querySelector("#fullscreen");
+  const fullscreenClose = document.querySelector("#fullscreen-close");
   const ctx = canvas.getContext("2d");
 
   const ball = { x: 0, y: 0, vx: 0, vy: 0 };
@@ -12,19 +14,25 @@
   let lastTime = 0;
   let dragging = false;
   let activePointer = null;
+  let pointerStart = null;
+  let pointerMoved = false;
   let launchUntil = 0;
   let lastMotion = 0;
   let previousAcceleration = null;
   let motionTimeout = null;
 
   function geometry() {
-    const scale = Math.min(width / 380, height / 420);
+    const fullscreen = scene.classList.contains("is-fullscreen");
+    const scale = fullscreen ? Math.min(width / 300, height / 560) : Math.min(width / 380, height / 420);
+    const anchorY = height * (fullscreen ? 0.73 : 0.64);
+    const radius = 51 * scale;
     return {
       scale,
       anchorX: width / 2,
-      anchorY: height * 0.64,
-      restY: height * 0.36,
-      radius: 51 * scale
+      anchorY,
+      restY: fullscreen ? anchorY - radius * 0.83 - (anchorY - height * 0.27 - radius * 0.83) / 3 : height * 0.36,
+      maxY: height * (fullscreen ? 0.62 : 0.57),
+      radius
     };
   }
 
@@ -145,7 +153,7 @@
   function frame(time) {
     const dt = Math.min((time - (lastTime || time)) / 1000, 0.032);
     lastTime = time;
-    const { anchorX, restY, radius } = geometry();
+    const { anchorX, restY, maxY, radius } = geometry();
     if (!dragging) {
       const targetY = time < launchUntil ? -radius * 2 : restY;
       ball.vx += (anchorX - ball.x) * 45 * dt;
@@ -156,7 +164,7 @@
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       ball.x = Math.max(radius, Math.min(width - radius, ball.x));
-      ball.y = Math.min(height * 0.57, ball.y);
+      ball.y = Math.min(maxY, ball.y);
     }
     draw();
     requestAnimationFrame(frame);
@@ -164,9 +172,9 @@
 
   function pointBall(event) {
     const rect = canvas.getBoundingClientRect();
-    const { radius } = geometry();
+    const { maxY, radius } = geometry();
     ball.x = Math.max(radius, Math.min(width - radius, event.clientX - rect.left));
-    ball.y = Math.max(radius, Math.min(height * 0.57, event.clientY - rect.top));
+    ball.y = Math.max(radius, Math.min(maxY, event.clientY - rect.top));
     ball.vx = 0;
     ball.vy = 0;
   }
@@ -175,31 +183,58 @@
     if (activePointer !== null) return;
     const rect = canvas.getBoundingClientRect();
     const { radius } = geometry();
-    if (Math.hypot(event.clientX - rect.left - ball.x, event.clientY - rect.top - ball.y) > radius * 1.4) return;
     activePointer = event.pointerId;
-    dragging = true;
-    launchUntil = 0;
+    pointerStart = { x: event.clientX, y: event.clientY };
+    pointerMoved = false;
+    dragging = Math.hypot(event.clientX - rect.left - ball.x, event.clientY - rect.top - ball.y) <= radius * 1.4;
+    if (dragging) launchUntil = 0;
     canvas.setPointerCapture(event.pointerId);
-    pointBall(event);
   });
   canvas.addEventListener("pointermove", (event) => {
-    if (event.pointerId === activePointer) pointBall(event);
+    if (event.pointerId !== activePointer) return;
+    if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 10) pointerMoved = true;
+    if (dragging && pointerMoved) pointBall(event);
   });
   function releasePointer(event) {
     if (event.pointerId !== activePointer) return;
+    const shouldLaunch = event.type === "pointerup" && !pointerMoved;
     dragging = false;
     activePointer = null;
+    pointerStart = null;
+    if (shouldLaunch) launch();
   }
   canvas.addEventListener("pointerup", releasePointer);
   canvas.addEventListener("pointercancel", releasePointer);
   canvas.addEventListener("lostpointercapture", releasePointer);
 
-  launchButton.addEventListener("click", () => {
+  function launch() {
     dragging = false;
     activePointer = null;
+    pointerStart = null;
     launchUntil = performance.now() + 700;
     ball.vy = -900 * geometry().scale;
     ball.vx += (Math.random() - 0.5) * 80 * geometry().scale;
+  }
+  launchButton.addEventListener("click", launch);
+  canvas.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      launch();
+    }
+  });
+
+  function setFullscreen(enabled) {
+    scene.classList.toggle("is-fullscreen", enabled);
+    document.body.classList.toggle("fullscreen-open", enabled);
+    fullscreenClose.hidden = !enabled;
+    fullscreenButton.setAttribute("aria-pressed", String(enabled));
+    resize();
+    (enabled ? fullscreenClose : fullscreenButton).focus();
+  }
+  fullscreenButton.addEventListener("click", () => setFullscreen(true));
+  fullscreenClose.addEventListener("click", () => setFullscreen(false));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && scene.classList.contains("is-fullscreen")) setFullscreen(false);
   });
 
   function handleMotion(event) {
@@ -212,15 +247,17 @@
       motionStatus.textContent = "スマホをやさしくふってみてね";
     }
     const now = performance.now();
-    if (previousAcceleration && now - lastMotion > 40 && !dragging) {
-      const dx = acceleration.x - previousAcceleration.x;
-      const dy = acceleration.y - previousAcceleration.y;
-      const scale = geometry().scale;
-      ball.vx += Math.max(-180, Math.min(180, dx * 22)) * scale;
-      ball.vy += Math.max(-180, Math.min(180, -dy * 22)) * scale;
+    if (!previousAcceleration || now - lastMotion > 40) {
+      if (previousAcceleration && !dragging) {
+        const dx = acceleration.x - previousAcceleration.x;
+        const dy = acceleration.y - previousAcceleration.y;
+        const scale = geometry().scale;
+        ball.vx += Math.max(-500, Math.min(500, dx * 65)) * scale;
+        ball.vy += Math.max(-500, Math.min(500, -dy * 65)) * scale;
+      }
+      previousAcceleration = { x: acceleration.x, y: acceleration.y };
       lastMotion = now;
     }
-    previousAcceleration = { x: acceleration.x, y: acceleration.y };
   }
 
   motionButton.addEventListener("click", async () => {

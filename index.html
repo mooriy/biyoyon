@@ -37,8 +37,9 @@
         <span class="scene-squiggle" aria-hidden="true">〰</span>
         <span class="scene-note note-left">ふりふり<br><span>♪</span></span>
         <span class="scene-note note-right">びよ〜ん！</span>
-        <canvas id="toy" aria-label="ばねにつながった丸いおもちゃ。ドラッグして動かせます。"></canvas>
-        <div class="scene-caption"><span>✦</span> さわっても あそべるよ <span>✦</span></div>
+        <canvas id="toy" role="button" tabindex="0" aria-label="びよよ～んを発射。丸い先端はドラッグして動かせます。"></canvas>
+        <button id="fullscreen-close" class="fullscreen-close" type="button" aria-label="全画面表示を閉じる" hidden>×</button>
+        <div class="scene-caption"><span>✦</span> タップで はっしゃ！ <span>✦</span></div>
       </div>
 
       <div class="controls">
@@ -50,6 +51,9 @@
         <button id="motion" class="motion-button" type="button">
           <span aria-hidden="true">⌁</span> スマホをふってあそぶ
         </button>
+        <button id="fullscreen" class="motion-button fullscreen-button" type="button" aria-pressed="false">
+          <span aria-hidden="true">⛶</span> 画面いっぱいであそぶ
+        </button>
         <p id="motion-status" class="motion-status" role="status">ボタンを押すと、スマホの動きに反応します</p>
       </div>
     </section>
@@ -58,7 +62,7 @@
       <div class="howto-heading"><span>HOW TO PLAY</span><i></i><span>あそびかた</span></div>
       <div class="steps">
         <div class="step"><span class="step-icon">⌁</span><div><strong>ふってみる</strong><small>スマホをやさしくふる</small></div><span class="step-number">01</span></div>
-        <div class="step"><span class="step-icon">↗</span><div><strong>のばしてみる</strong><small>ボタンをおして、びよ〜ん</small></div><span class="step-number">02</span></div>
+        <div class="step"><span class="step-icon">↗</span><div><strong>のばしてみる</strong><small>タップして、びよ〜ん</small></div><span class="step-number">02</span></div>
         <div class="step"><span class="step-icon">♡</span><div><strong>ひとやすみ</strong><small>ゆらゆらながめて、ほっ。</small></div><span class="step-number">03</span></div>
       </div>
     </section>
