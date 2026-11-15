@@ -10,6 +10,11 @@
   const sceneParent = scene.parentNode;
   const sceneNextSibling = scene.nextSibling;
 
+  const springStiffness = 45;
+  const springDamping = 3;
+  const bendingStiffness = 45;
+  const airDamping = 2;
+  const gravity = 260;
   const ball = { x: 0, y: 0, vx: 0, vy: 0 };
   let width = 0;
   let height = 0;
@@ -18,7 +23,6 @@
   let activePointer = null;
   let pointerStart = null;
   let pointerMoved = false;
-  let launchUntil = 0;
   let lastMotion = 0;
   let previousAcceleration = null;
   let motionTimeout = null;
@@ -156,18 +160,33 @@
   function frame(time) {
     const dt = Math.min((time - (lastTime || time)) / 1000, 0.032);
     lastTime = time;
-    const { anchorX, restY, maxY, radius } = geometry();
+    const { anchorX, anchorY, restY, maxY, radius, scale } = geometry();
     if (!dragging) {
-      const targetY = time < launchUntil ? -radius * 2 : restY;
-      ball.vx += (anchorX - ball.x) * 45 * dt;
-      ball.vy += (targetY - ball.y) * 45 * dt;
-      const damping = Math.exp(-5 * dt);
-      ball.vx *= damping;
-      ball.vy *= damping;
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
-      ball.x = Math.max(radius, Math.min(width - radius, ball.x));
-      ball.y = Math.min(maxY, ball.y);
+      // Unit-mass model: compression balances gravity at the resting position.
+      const naturalLength = anchorY - restY + gravity * scale / springStiffness;
+      const steps = Math.max(1, Math.ceil(dt / (1 / 120)));
+      const step = dt / steps;
+      for (let i = 0; i < steps; i++) {
+        const dx = ball.x - anchorX;
+        const dy = ball.y - anchorY;
+        const length = Math.max(0.001, Math.hypot(dx, dy));
+        const ux = dx / length;
+        const uy = dy / length;
+        const radialVelocity = ball.vx * ux + ball.vy * uy;
+        const springAcceleration = -springStiffness * (length - naturalLength) - springDamping * radialVelocity;
+        ball.vx += (springAcceleration * ux - bendingStiffness * dx - airDamping * ball.vx) * step;
+        ball.vy += (springAcceleration * uy + gravity * scale - airDamping * ball.vy) * step;
+        ball.x += ball.vx * step;
+        ball.y += ball.vy * step;
+        if (ball.x < radius || ball.x > width - radius) {
+          ball.x = Math.max(radius, Math.min(width - radius, ball.x));
+          ball.vx = 0;
+        }
+        if (ball.y > maxY) {
+          ball.y = maxY;
+          ball.vy = 0;
+        }
+      }
     }
     draw();
     requestAnimationFrame(frame);
@@ -190,7 +209,6 @@
     pointerStart = { x: event.clientX, y: event.clientY };
     pointerMoved = false;
     dragging = Math.hypot(event.clientX - rect.left - ball.x, event.clientY - rect.top - ball.y) <= radius * 1.4;
-    if (dragging) launchUntil = 0;
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener("pointermove", (event) => {
@@ -214,8 +232,8 @@
     dragging = false;
     activePointer = null;
     pointerStart = null;
-    launchUntil = performance.now() + 700;
-    ball.vy = -900 * geometry().scale;
+    const { radius, scale } = geometry();
+    ball.vy = -Math.max(900 * scale, Math.sqrt(springStiffness) * 2 * (Math.max(0, ball.y) + radius * 2));
     ball.vx += (Math.random() - 0.5) * 80 * geometry().scale;
   }
   launchButton.addEventListener("click", launch);
@@ -282,15 +300,15 @@
         const dx = acceleration.x - previousAcceleration.x;
         const dy = acceleration.y - previousAcceleration.y;
         const scale = geometry().scale;
-        ball.vx += Math.max(-5000, Math.min(5000, dx * 650)) * scale;
-        ball.vy += Math.max(-5000, Math.min(5000, -dy * 650)) * scale;
+        ball.vx += Math.max(-2500, Math.min(2500, dx * 325)) * scale;
+        ball.vy += Math.max(-2500, Math.min(2500, -dy * 325)) * scale;
       }
       previousAcceleration = { x: acceleration.x, y: acceleration.y };
       lastMotion = now;
     }
   }
 
-  motionButton.addEventListener("click", async () => {
+  async function enableMotion(interactive) {
     if (!window.isSecureContext) {
       motionStatus.textContent = "スマホの動きを使うには、HTTPSで開いてください。さわってもあそべます。";
       return;
@@ -299,16 +317,21 @@
       motionStatus.textContent = "この端末では動きセンサーを使えません。さわってあそんでね。";
       return;
     }
+    if (typeof DeviceMotionEvent.requestPermission === "function" && !interactive) {
+      motionStatus.textContent = "動きセンサーを使うには、ボタンを押して許可してね。";
+      return;
+    }
+    motionButton.disabled = true;
     try {
       if (typeof DeviceMotionEvent.requestPermission === "function") {
         const permission = await DeviceMotionEvent.requestPermission();
         if (permission !== "granted") {
+          motionButton.disabled = false;
           motionStatus.textContent = "動きセンサーが許可されませんでした。設定を確認してね。";
           return;
         }
       }
       window.addEventListener("devicemotion", handleMotion);
-      motionButton.disabled = true;
       motionStatus.textContent = "動きセンサーを確認しています…";
       motionTimeout = setTimeout(() => {
         window.removeEventListener("devicemotion", handleMotion);
@@ -318,9 +341,11 @@
       }, 4000);
     } catch (error) {
       console.error("動きセンサーを有効にできませんでした:", error);
+      motionButton.disabled = false;
       motionStatus.textContent = "動きセンサーを使えませんでした。設定を確認してね。";
     }
-  });
+  }
+  motionButton.addEventListener("click", () => enableMotion(true));
 
   window.addEventListener("resize", () => {
     syncViewport();
@@ -332,4 +357,5 @@
   }
   resize();
   requestAnimationFrame(frame);
+  enableMotion(false);
 })();
