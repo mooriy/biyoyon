@@ -63,6 +63,8 @@ body.fullscreen-open { overflow: hidden; }
 .scene.is-fullscreen { position: fixed; z-index: 10; inset: auto; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh; min-height: 0; border-radius: 0; }
 .scene.is-fullscreen .scene-orbit, .scene.is-fullscreen .scene-star, .scene.is-fullscreen .scene-squiggle, .scene.is-fullscreen .scene-note, .scene.is-fullscreen .scene-caption { display: none; }
 .motion-status { min-height: 16px; margin: 8px 0 0; color: #a2ada2; font-size: 10px; line-height: 1.6; }
+.scene.is-fullscreen .motion-status { position: absolute; z-index: 1; top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); right: 76px; margin: 0; padding: 8px 12px; border-radius: 12px; background: #f8fbf5e6; color: #66836d; font-size: 12px; pointer-events: none; }
+.scene.is-fullscreen .motion-status.motion-active { display: none; }
 .howto { padding: 38px 0 34px; }
 .howto-heading { display: flex; align-items: center; gap: 12px; color: #81998a; font: 700 10px "DM Sans", sans-serif; letter-spacing: .16em; }
 .howto-heading i { height: 1px; flex: 1; background: #dfe7dc; }

@@ -9,6 +9,8 @@
   const ctx = canvas.getContext("2d");
   const sceneParent = scene.parentNode;
   const sceneNextSibling = scene.nextSibling;
+  const motionStatusParent = motionStatus.parentNode;
+  const motionStatusNextSibling = motionStatus.nextSibling;
 
   const springStiffness = 45;
   const springDamping = 3;
@@ -261,8 +263,10 @@
     if (enabled) {
       fullscreenScroll = { x: window.scrollX, y: window.scrollY };
       document.body.appendChild(scene);
+      scene.appendChild(motionStatus);
     } else {
       sceneParent.insertBefore(scene, sceneNextSibling);
+      motionStatusParent.insertBefore(motionStatus, motionStatusNextSibling);
       for (const property of ["left", "top", "width", "height"]) {
         scene.style.removeProperty(property);
       }
@@ -279,11 +283,19 @@
     }
     (enabled ? fullscreenClose : fullscreenButton).focus({ preventScroll: true });
   }
-  fullscreenButton.addEventListener("click", () => setFullscreen(true));
+  fullscreenButton.addEventListener("click", () => {
+    if (!motionButton.disabled) enableMotion(true);
+    setFullscreen(true);
+  });
   fullscreenClose.addEventListener("click", () => setFullscreen(false));
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && scene.classList.contains("is-fullscreen")) setFullscreen(false);
   });
+
+  function setMotionStatus(message, active = false) {
+    motionStatus.textContent = message;
+    motionStatus.classList.toggle("motion-active", active);
+  }
 
   function handleMotion(event) {
     const acceleration = event.accelerationIncludingGravity;
@@ -292,7 +304,7 @@
       clearTimeout(motionTimeout);
       motionTimeout = null;
       motionButton.textContent = "⌁ スマホをふってあそべます";
-      motionStatus.textContent = "スマホをやさしくふってみてね";
+      setMotionStatus("スマホをやさしくふってみてね", true);
     }
     const now = performance.now();
     if (!previousAcceleration || now - lastMotion > 40) {
@@ -310,39 +322,40 @@
 
   async function enableMotion(interactive) {
     if (!window.isSecureContext) {
-      motionStatus.textContent = "スマホの動きを使うには、HTTPSで開いてください。さわってもあそべます。";
+      setMotionStatus("スマホの動きを使うには、HTTPSで開いてください。さわってもあそべます。");
       return;
     }
     if (!("DeviceMotionEvent" in window)) {
-      motionStatus.textContent = "この端末では動きセンサーを使えません。さわってあそんでね。";
+      setMotionStatus("この端末では動きセンサーを使えません。さわってあそんでね。");
       return;
     }
     if (typeof DeviceMotionEvent.requestPermission === "function" && !interactive) {
-      motionStatus.textContent = "動きセンサーを使うには、ボタンを押して許可してね。";
+      setMotionStatus("動きセンサーを使うには、ボタンを押して許可してね。");
       return;
     }
     motionButton.disabled = true;
+    setMotionStatus("動きセンサーの許可を確認しています…");
     try {
       if (typeof DeviceMotionEvent.requestPermission === "function") {
         const permission = await DeviceMotionEvent.requestPermission();
         if (permission !== "granted") {
           motionButton.disabled = false;
-          motionStatus.textContent = "動きセンサーが許可されませんでした。設定を確認してね。";
+          setMotionStatus("動きセンサーが許可されませんでした。設定を確認してね。");
           return;
         }
       }
       window.addEventListener("devicemotion", handleMotion);
-      motionStatus.textContent = "動きセンサーを確認しています…";
+      setMotionStatus("動きセンサーを確認しています…");
       motionTimeout = setTimeout(() => {
         window.removeEventListener("devicemotion", handleMotion);
         motionTimeout = null;
         motionButton.disabled = false;
-        motionStatus.textContent = "動きセンサーを確認できませんでした。端末やブラウザの設定を確認してね。";
+        setMotionStatus("動きセンサーを確認できませんでした。端末やブラウザの設定を確認してね。");
       }, 4000);
     } catch (error) {
       console.error("動きセンサーを有効にできませんでした:", error);
       motionButton.disabled = false;
-      motionStatus.textContent = "動きセンサーを使えませんでした。設定を確認してね。";
+      setMotionStatus("動きセンサーを使えませんでした。設定を確認してね。");
     }
   }
   motionButton.addEventListener("click", () => enableMotion(true));
